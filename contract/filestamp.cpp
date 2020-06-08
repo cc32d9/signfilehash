@@ -76,15 +76,17 @@ CONTRACT filestamp : public eosio::contract {
 
     uint64_t h64 = hash64(hash);
     auto hashidx = _files.get_index<name("hash")>();
-    auto hashitr = hashidx.find(h64);
+    auto hashitr = hashidx.lower_bound(h64);
     while( hashitr != hashidx.end() && hash64(hashitr->hash) == h64 ) {
       if(hashitr->hash == hash) {
+        check(hashitr->author != signor, "Author of the file does not need to endorse it");
         auto endidx = _endorsements.get_index<name("fileid")>();
         auto enditr = endidx.lower_bound(hashitr->id);
         int count = 0;
         while( enditr != endidx.end() && enditr->file_id == hashitr->id ) {
           check(enditr->signed_by != signor, "This sognor has already endorsed this hash");
           check(++count < MAX_ENDORSEMENTS, "Too many endorsements for this hash");
+          enditr++;
         }
 
         auto trxsize = transaction_size();
@@ -100,6 +102,7 @@ CONTRACT filestamp : public eosio::contract {
                                 e.signed_by = signor;
                                 e.trxid = trxid;
                               });
+        return;
       }
       
       hashitr++;
