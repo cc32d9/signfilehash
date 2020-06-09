@@ -1,4 +1,4 @@
-CONTRACT=filestamp
+CONTRACT=signfilehash
 
 all: $(CONTRACT).wasm $(CONTRACT).abi
 
