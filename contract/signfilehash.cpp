@@ -35,11 +35,13 @@ CONTRACT signfilehash : public eosio::contract {
   
   const int MAX_ENDORSEMENTS = 10;
 
-  ACTION addfile(name author, string filename, checksum256 hash)
+  ACTION addfile(name author, checksum256 hash, string filename, string description)
   {
     require_auth(author);
     files _files(_self, 0);
 
+    check(filename.length() > 0, "Filename cannot be empty");
+    
     auto hashidx = _files.get_index<name("hash")>();
     check(hashidx.find(hash) == hashidx.end(), "This hash is already registered");
 
@@ -54,6 +56,7 @@ CONTRACT signfilehash : public eosio::contract {
                      f.id = _files.available_primary_key();
                      f.author = author;
                      f.filename = filename;
+                     f.description = description;
                      f.hash = hash;
                      f.trxid = trxid;
                      f.expires = time_point_sec(current_time_point()) + EXPIRES_SECONDS;
@@ -117,7 +120,7 @@ CONTRACT signfilehash : public eosio::contract {
       fileitr = fileidx.erase(fileitr);
       done_something = true;
     }
-    check(done_something, "There are no expired transactions or inactive arbiters");
+    check(done_something, "There are no expired entries");
   }
   
 
@@ -128,6 +131,7 @@ CONTRACT signfilehash : public eosio::contract {
     uint64_t         id;             /* autoincrement */
     name             author;
     string           filename;
+    string           description;
     checksum256      hash;
     checksum256      trxid;
     time_point_sec   expires;    
