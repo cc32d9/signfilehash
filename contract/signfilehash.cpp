@@ -25,9 +25,9 @@ limitations under the License.
 using namespace eosio;
 using std::vector;
 
-CONTRACT filestamp : public eosio::contract {
+CONTRACT signfilehash : public eosio::contract {
  public:
-  filestamp( name self, name code, datastream<const char*> ds ):
+  signfilehash( name self, name code, datastream<const char*> ds ):
     contract(self, code, ds)
     {}
 
@@ -40,14 +40,8 @@ CONTRACT filestamp : public eosio::contract {
     require_auth(author);
     files _files(_self, 0);
 
-    // hash64 is considered non-unique, although highly unlikely to have collisions)
-    uint64_t h64 = hash64(hash);
     auto hashidx = _files.get_index<name("hash")>();
-    auto hashitr = hashidx.lower_bound(h64);
-    while( hashitr != hashidx.end() && hash64(hashitr->hash) == h64 ) {
-      check(hashitr->hash != hash, "This hash is already registered");
-      hashitr++;
-    }
+    check(hashidx.find(hash) == hashidx.end(), "This hash is already registered");
 
     auto trxsize = transaction_size();
     char trxbuf[trxsize];
@@ -74,40 +68,33 @@ CONTRACT filestamp : public eosio::contract {
     files _files(_self, 0);
     endorsements _endorsements(_self, 0);
 
-    uint64_t h64 = hash64(hash);
     auto hashidx = _files.get_index<name("hash")>();
-    auto hashitr = hashidx.lower_bound(h64);
-    while( hashitr != hashidx.end() && hash64(hashitr->hash) == h64 ) {
-      if(hashitr->hash == hash) {
-        check(hashitr->author != signor, "Author of the file does not need to endorse it");
-        auto endidx = _endorsements.get_index<name("fileid")>();
-        auto enditr = endidx.lower_bound(hashitr->id);
-        int count = 0;
-        while( enditr != endidx.end() && enditr->file_id == hashitr->id ) {
-          check(enditr->signed_by != signor, "This sognor has already endorsed this hash");
-          check(++count < MAX_ENDORSEMENTS, "Too many endorsements for this hash");
-          enditr++;
-        }
+    auto hashitr = hashidx.find(hash);
+    check(hashidx.find(hash) != hashidx.end(), "Cannot find this file hash");
+    check(hashitr->author != signor, "Author of the file does not need to endorse it");
 
-        auto trxsize = transaction_size();
-        char trxbuf[trxsize];
-        uint32_t trxread = read_transaction( trxbuf, trxsize );
-        check( trxsize == trxread, "read_transaction failed");
-        checksum256 trxid = sha256(trxbuf, trxsize);
-        
-        _endorsements.emplace(signor,
-                              [&]( auto& e ) {
-                                e.id = _endorsements.available_primary_key();
-                                e.file_id = hashitr->id;
-                                e.signed_by = signor;
-                                e.trxid = trxid;
-                              });
-        return;
-      }
-      
-      hashitr++;
+    auto endidx = _endorsements.get_index<name("fileid")>();
+    auto enditr = endidx.lower_bound(hashitr->id);
+    int count = 0;
+    while( enditr != endidx.end() && enditr->file_id == hashitr->id ) {
+      check(enditr->signed_by != signor, "This signor has already endorsed this hash");
+      check(++count < MAX_ENDORSEMENTS, "Too many endorsements for this hash");
+      enditr++;
     }
-    check(false, "Cannot find this file hash");
+
+    auto trxsize = transaction_size();
+    char trxbuf[trxsize];
+    uint32_t trxread = read_transaction( trxbuf, trxsize );
+    check( trxsize == trxread, "read_transaction failed");
+    checksum256 trxid = sha256(trxbuf, trxsize);
+    
+    _endorsements.emplace(signor,
+                          [&]( auto& e ) {
+                            e.id = _endorsements.available_primary_key();
+                            e.file_id = hashitr->id;
+                            e.signed_by = signor;
+                            e.trxid = trxid;
+                          });
   }
 
   
@@ -137,16 +124,6 @@ CONTRACT filestamp : public eosio::contract {
   
  private:
 
-  static uint64_t hash64(const checksum256 h) {
-    auto hbytes = h.extract_as_byte_array();
-    uint64_t ret = 0;
-    for(int i=0; i<8; ++i) {
-      ret <<=8;
-      ret |= hbytes[i];
-    }
-    return ret;
-  }
-
   struct [[eosio::table("files")]] file {
     uint64_t         id;             /* autoincrement */
     name             author;
@@ -156,13 +133,13 @@ CONTRACT filestamp : public eosio::contract {
     time_point_sec   expires;    
 
     auto primary_key()const { return id; }
-    uint64_t get_hash64() const { return hash64(hash); }
+    checksum256 get_hash() const { return hash; }
     uint64_t get_expires()const { return expires.utc_seconds; }
   };
   
   typedef eosio::multi_index<
     name("files"), file,
-    indexed_by<name("hash"), const_mem_fun<file, uint64_t, &file::get_hash64>>,
+    indexed_by<name("hash"), const_mem_fun<file, checksum256, &file::get_hash>>,
     indexed_by<name("expires"), const_mem_fun<file, uint64_t, &file::get_expires>>
     > files;
 
